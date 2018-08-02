@@ -4,97 +4,159 @@
 #include "CSG/CSG.h"
 
 using namespace irr;
+using namespace scene;
+using namespace core;
+using namespace video;
 
 #ifdef _MSC_VER
 #pragma comment(lib, "Irrlicht.lib")
 #endif
 
-class CSampleSceneNode : public scene::ISceneNode {
-	core::aabbox3d<f32> Box;
-	video::S3DVertex *vertices;
-	video::SMaterial Material;
-	meshMesh mesh;
-public:
-	CSampleSceneNode(scene::ISceneNode* parent, scene::ISceneManager* mgr, s32 id)
-		: scene::ISceneNode(parent, mgr, id){
-		Material.Wireframe = true;
-		Material.Lighting = false;
-		initializeMesh();
-		//meshInitializeBox(&mesh, -0.5, 0.5, -0.5, 0.5, -0.5, 0.5);
+meshMesh mesh;
 
-		//Vertices[0] = video::S3DVertex(0, 0, 10, 1, 1, 0, video::SColor(255, 0, 255, 255), 0, 1);
-		//Vertices[1] = video::S3DVertex(10, 0, -10, 1, 1, 0, video::SColor(255, 255, 0, 255), 1, 1);
-		//Vertices[2] = video::S3DVertex(0, 20, 0, 1, 1, 0, video::SColor(255, 255, 255, 0), 1, 0);
-		//Vertices[3] = video::S3DVertex(-10, 0, -10, 0, 0, 1, video::SColor(255, 0, 255, 0), 0, 0);
-		GLuint vertNum = mesh.vertNum;
-		GLuint attrDim = mesh.attrDim;
-		vertices = (video::S3DVertex*)malloc(mesh.vertNum * sizeof(video::S3DVertex));
-		for(GLuint i=0; i<vertNum; i++){
-			vertices[i].Pos.set(mesh.vert[i * attrDim  + 0], mesh.vert[i * attrDim  + 1], mesh.vert[i * attrDim  + 2]);
+SMesh* m_pMesh = NULL;
+
+
+int initializeMesh(meshMesh& mesh){
+	meshMesh meshA;
+	meshMesh meshB;
+	meshMesh meshC;
+	meshMesh meshD;
+	if (meshInitializeBox(&meshB, -0.5, 0.5, -0.5, 0.5, -0.5, 0.5) != 0 || meshInitializeCapsule(&meshA, 0.5, 2.0, 16, 32)
+		|| 	meshInitializeBox(&meshC, -0.3, 0.3, -0.3, 0.3, -0.3, 0.3) || meshInitializeSphere(&meshD, 0.3, 16, 32)) {
+	 	return 1;
+	}
+	GLdouble translation[3] = {0.5, 0.5, 0.5};
+	GLdouble translation1[3] = {0.2, 0.2, 0.3};
+	meshTranslate(&meshA, translation);
+	meshTranslate(&meshD, translation1);
+
+	// boolean operations: ((capsule intersect box) union another box) subtract sphere
+	CSGIntersection(&meshA, &meshB, &mesh);
+	meshDestroy(&meshA);
+	meshDestroy(&meshB);
+	CSGUnion(&mesh, &meshC, &mesh);
+	meshDestroy(&meshC);
+	CSGSubtraction(&mesh, &meshD, &mesh);
+	meshDestroy(&meshD);
+	return 0;
+}
+
+
+
+meshMesh CreateCSGMesh(SMesh* pMesh){
+	int meshBufCount = pMesh->getMeshBufferCount();
+	int totalVertexCount = 0;
+	int totalIndexCount = 0;
+	for(int i=0; i<meshBufCount; i++){
+		IMeshBuffer* meshBuffer = pMesh->getMeshBuffer(i);
+		totalVertexCount += meshBuffer->getIndexCount();
+		totalIndexCount += meshBuffer->getVertexCount();
+	}
+	meshMesh returnMesh;
+	meshInitialize(&returnMesh, totalIndexCount/3, totalVertexCount, 3);
+	int triIndex = 0;
+	int vIndex = 0;
+
+	for(int i=0; i<meshBufCount; i++){
+		IMeshBuffer* pMeshBuffer = pMesh->getMeshBuffer(i);
+		irr::u16* indices = pMeshBuffer->getIndices();
+		void* vertices = pMeshBuffer->getVertices();
+		irr::u32 indexCount = pMeshBuffer->getIndexCount();
+		irr::u32 vertexCount = pMeshBuffer->getVertexCount();
+
+		memcpy(returnMesh.tri + triIndex, indices, indexCount);
+		triIndex += indexCount;
+
+		memcpy(returnMesh.vert + vIndex, vertices, vertexCount);
+		vIndex += vertexCount;
+	}
+	return returnMesh;
+}
+
+
+
+// 		driver->drawVertexPrimitiveList(&vertices[0], mesh.vertNum, mesh.tri, mesh.triNum, video::EVT_STANDARD, scene::EPT_TRIANGLES, video::EIT_32BIT);
+
+//SMesh* CreateIrrMesh(const meshMesh& mesh){
+//m_pMesh = new SMesh();
+//
+//GLuint bufCount = ceil((double)mesh.triNum/5000.0);
+//
+//for(GLuint bufIndex = 1; bufIndex < bufCount; bufIndex++){
+//GLuint triStart = bufIndex * 5000;
+//GLuint triEnd = (bufIndex + 1) * 5000;
+//if(triEnd > mesh.triNum){
+//triEnd = mesh.triNum;
+//}
+//GLuint triCount = triEnd - triStart;
+//
+//GLuint vertStart = triStart * 3;
+//GLuint vertEnd = triEnd * 3;
+//GLuint vertCount = triCount * 3;
+//
+//SMeshBuffer* buf = new SMeshBuffer();
+//m_pMesh->addMeshBuffer(buf);
+//
+//buf->Vertices.set_used(vertCount);
+//GLdouble* meshVertices = mesh.vert;
+//for(int i=0; i<vertCount; i++){
+//S3DVertex& v = buf->Vertices[i];
+//v.Pos.set(meshVertices[(i + vertStart)*mesh.attrDim + 0], meshVertices[(i + vertStart)*mesh.attrDim + 1], meshVertices[(i + vertStart)*mesh.attrDim + 2]);
+//v.Color.set(255, 0, 0, 255);
+//}
+//
+//buf->Indices.set_used(3 * triCount);
+//GLuint* triIndices = mesh.tri;
+//for(int i=0; i<triCount; i++){
+//buf->Indices[i*3 + 0] = i*3 + 0;//triIndices[(i + triStart) *3 + 0];
+//buf->Indices[i*3 + 1] = i*3 + 1;//triIndices[(i + triStart) *3 + 1];
+//buf->Indices[i*3 + 2] = i*3 + 2;//triIndices[(i + triStart) *3 + 2];
+//}
+//buf->recalculateBoundingBox();
+//}
+//return m_pMesh;
+//}
+
+SMesh* CreateIrrMesh(meshMesh& mesh){
+	SMesh* pMesh = new SMesh();
+
+	GLuint bufCount = ceil((double)mesh.triNum/5000.0);
+
+	for(GLuint bufIndex = 1; bufIndex < bufCount; bufIndex++){
+		GLuint triStart = bufIndex * 5000;
+		GLuint triEnd = (bufIndex + 1) * 5000;
+		if(triEnd > mesh.triNum){
+			triEnd = mesh.triNum;
 		}
-		Box.reset(vertices[0].Pos);
-		for(s32 i=1; i<vertNum; i++){
-			Box.addInternalPoint(vertices[i].Pos);
+		GLuint triCount = triEnd - triStart;
+
+		GLuint vertStart = triStart * 3;
+		GLuint vertEnd = triEnd * 3;
+		GLuint vertCount = triCount * 3;
+
+		SMeshBuffer* buf = new SMeshBuffer();
+		pMesh->addMeshBuffer(buf);
+
+		buf->Vertices.set_used(vertCount);
+		GLdouble* meshVertices = mesh.vert;
+		for(int i=0; i<vertCount; i++){
+			S3DVertex& v = buf->Vertices[i];
+			v.Pos.set(meshVertices[(i + vertStart)*mesh.attrDim + 0], meshVertices[(i + vertStart)*mesh.attrDim + 1], meshVertices[(i + vertStart)*mesh.attrDim + 2]);
+			v.Color.set(255, 0, 0, 255);
 		}
-	}
 
-	int initializeMesh(){
-		meshMesh meshA;
-		meshMesh meshB;
-		meshMesh meshC;
-		meshMesh meshD;
-		if (meshInitializeBox(&meshB, -0.5, 0.5, -0.5, 0.5, -0.5, 0.5) != 0 || meshInitializeCapsule(&meshA, 0.5, 2.0, 16, 32)
-			|| 	meshInitializeBox(&meshC, -0.3, 0.3, -0.3, 0.3, -0.3, 0.3) || meshInitializeSphere(&meshD, 0.3, 16, 32)) {
-		 	return 1;
+		buf->Indices.set_used(3 * triCount);
+		GLuint* triIndices = mesh.tri;
+		for(int i=0; i<triCount; i++){
+			buf->Indices[i*3 + 0] = i*3 + 0;//triIndices[(i + triStart) *3 + 0];
+			buf->Indices[i*3 + 1] = i*3 + 1;//triIndices[(i + triStart) *3 + 1];
+			buf->Indices[i*3 + 2] = i*3 + 2;//triIndices[(i + triStart) *3 + 2];
 		}
-		GLdouble translation[3] = {0.5, 0.5, 0.5};
-		GLdouble translation1[3] = {0.2, 0.2, 0.3};
-		meshTranslate(&meshA, translation);
-		meshTranslate(&meshD, translation1);
-
-		// boolean operations: ((capsule intersect box) union another box) subtract sphere
-		CSGIntersection(&meshA, &meshB, &mesh);
-		meshDestroy(&meshA);
-		meshDestroy(&meshB);
-		CSGUnion(&mesh, &meshC, &mesh);
-		meshDestroy(&meshC);
-		CSGSubtraction(&mesh, &meshD, &mesh);
-		meshDestroy(&meshD);
-		return 0;
+		buf->recalculateBoundingBox();
 	}
-
-	virtual void OnRegisterSceneNode(){
-		if(IsVisible){
-			SceneManager->registerNodeForRendering(this);
-		}
-		ISceneNode::OnRegisterSceneNode();
-	}
-
-	virtual void render(){
-		u16 indices[] = {
-			0, 2, 3,
-			2, 1, 3,
-			1, 0, 3,
-			2, 0, 1
-		};
-		video::IVideoDriver* driver = SceneManager->getVideoDriver();
-		driver->setMaterial(Material);
-		driver->setTransform(video::ETS_WORLD, AbsoluteTransformation);
-		driver->drawVertexPrimitiveList(&vertices[0], mesh.vertNum, mesh.tri, mesh.triNum, video::EVT_STANDARD, scene::EPT_TRIANGLES, video::EIT_32BIT);
-	}
-
-	virtual const core::aabbox3d<f32>& getBoundingBox() const {
-		return Box;
-	}
-
-	virtual u32 getMaterialCount() const {
-		return 1;
-	}
-
-	virtual video::SMaterial& getMaterial(u32 i){
-		return Material;
-	}
-};
+	return pMesh;
+}
 
 int main(){
 	video::E_DRIVER_TYPE driverType = driverChoiceConsole();
@@ -102,7 +164,7 @@ int main(){
 		return 1;
 	}
 
-	IrrlichtDevice* device = createDevice(driverType, core::dimension2d<u32>(640, 480), 16, false);
+	IrrlichtDevice* device = createDevice(driverType, core::dimension2d<u32>(640, 480), 32, false);
 	if(device == 0){
 		return 1;
 	}
@@ -110,26 +172,32 @@ int main(){
 	video::IVideoDriver* driver = device->getVideoDriver();
 	scene::ISceneManager* smgr = device->getSceneManager();
 
-	CSampleSceneNode* myNode = new CSampleSceneNode(smgr->getRootSceneNode(), smgr, 666);
-	core::aabbox3d<f32> bBox = myNode->getBoundingBox();
-	//bBox.
-	smgr->addCameraSceneNodeMaya();
-	scene::ICameraSceneNode* camera = device->getSceneManager()->getActiveCamera();
-	if(camera){
-		camera->setPosition(bBox.MinEdge);
-		camera->setTarget(bBox.getCenter());
-		camera->setFarValue(20000.0f);
-		camera->setInputReceiverEnabled(true);
+	meshMesh mesh;
+	initializeMesh(mesh);
+	//meshInitializeBox(&mesh, -0.5, 50.5, -50.5, 50.5, -0.5, 0.5);
+	SMesh* pMesh = CreateIrrMesh(mesh);
 
-	}
+	meshMesh csgMesh = CreateCSGMesh(pMesh);
+
+	SMesh* pIrrMesg = CreateIrrMesh(csgMesh);
+
+	IMeshSceneNode* meshnode = smgr -> addMeshSceneNode(pMesh);
+	meshnode->setMaterialFlag(video::EMF_BACK_FACE_CULLING, false);
+
+
+	ICameraSceneNode* camera = smgr->addCameraSceneNodeMaya();
+	if(camera != NULL){
+		camera->setTarget(vector3df(0, 0, 0));
+		camera->setPosition(vector3df(5, 0, 0));
+	}//(NULL, vector3df(5, 0, 0), vector3df(0, 0, 0));
 	//scene::ISceneNodeAnimator* anim = smgr->createRotationAnimator(core::vector3df(0.8f, 0, 0.8f));
 	//if(anim){
 		//myNode->addAnimator(anim);
 		//anim->drop();
 		//anim = 0;
 //	}
-	myNode->drop();
-	myNode = 0;
+	//myNode->drop();
+	//myNode = 0;
 
 	u32 frames = 0;
 	while(device->run()){
